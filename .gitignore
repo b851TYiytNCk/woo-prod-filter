@@ -1,0 +1,5 @@
+node_modules
+*.zip
+backup0405
+wp-content
+installer.php
