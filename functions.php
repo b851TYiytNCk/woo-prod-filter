@@ -66,22 +66,6 @@ if (version_compare(get_bloginfo('version'), '4.7.3', '>=') && (is_admin() || is
 	require 'inc/nux/class-storefront-nux-starter-content.php';
 }
 
-/**
- * Note: Do not add any custom code here. Please use a custom plugin so that your customizations aren't lost during updates.
- * https://github.com/woocommerce/theme-customisations
- */
-
-function my_theme_load_resources() {	
-	wp_enqueue_style('custom-style', get_template_directory_uri() . '/assets/css/custom.min.css');
-}
-add_action('wp_enqueue_scripts', 'my_theme_load_resources', 30);
-
-add_action('wp_enqueue_scripts', 'my_scripts_method');
-function my_scripts_method() {
-	wp_enqueue_script('slick-js', get_template_directory_uri() . '/assets/js/slick.min.js');
-	wp_enqueue_script('custom', get_template_directory_uri() . '/assets/js/custom.min.js', NULL, NULL, true);
-}
-
 remove_action('woocommerce_after_shop_loop_item', 'woocommerce_template_loop_add_to_cart');
 remove_action('woocommerce_after_single_product_summary', 'woocommerce_output_product_data_tabs');
 remove_action('woocommerce_single_product_summary', 'woocommerce_template_single_title', 5);
@@ -165,18 +149,6 @@ function custom_recently_viewed_products() {
  
 }
 
-add_action( 'woocommerce_after_cart_item_name', 'truemisha_artikul_in_cart', 25 );
- 
-function truemisha_artikul_in_cart( $cart_item ) {
- 
-	$sku = $cart_item['data']->get_sku();
- 
-	if( $sku ) { 
-		echo '<p><small>Артикул: ' . $sku . '</small></p>';
-	}
- 
-}
-
 /**
  * 
  * Check if we're on the archive page for your custom post type
@@ -186,189 +158,240 @@ function truemisha_artikul_in_cart( $cart_item ) {
  * @return bool|null
  **/
 function custom_archive_pagination( $query ) {
-    if ( is_archive() && $query->is_main_query() ) {
-        if ( !empty($_GET) ) {
 
-			global $custom_current;
-		
-			$custom_current = absint(
-				max(
-					1,
-					get_query_var( 'paged' ) ? get_query_var( 'paged' ) : get_query_var( 'page' )
-				)
-			);
 
-			$args = array(
-				'post_type'      => 'product',
-				'posts_per_page' => 12,
-				'paged'          => $custom_current,
-			);
+  $is_shop = is_shop();
+  $is_cat = is_product_category();
 
-			$tax_query_array = array(
-				'relation' => 'AND',
-			);
+  if ( ( $is_shop | $is_cat ) && $query->is_main_query() && !is_search() ) {
 
-			if ( isset($_GET['fproduct_cat']) && !empty($_GET['fproduct_cat']) ) {
-			
-				$prod_cat = explode( ',', sanitize_text_field( $_GET['fproduct_cat'] ) );
+    $catsize_enabled = isset($_COOKIE['catsize']) && !isset($_GET['pa_razmer']);
 
-				$tax_query_array[] = array(
-					'taxonomy' => 'product_cat',
-					'field' => 'slug',
-					'terms' => $prod_cat,
-				);
+    function setCatSizeinGET($enabled) {
 
-			}
+      if ($enabled) {
 
-			if (!empty($_GET['minPrice'])) {
-				$meta_query_array = array(
-					'relation' => 'AND',
-				);
-			}
+        $sizeRange = explode('-', sanitize_text_field($_COOKIE['catsize']) );
+        $_GET['pa_razmer'] = '';
 
-			foreach ($_GET as $key => $value) {
+        if ( count($sizeRange) === 2 ) {
 
-				$key = sanitize_text_field($key);
-				$value = sanitize_text_field($value);
+          $maxCookieSize = intval($sizeRange[1]);
+          $minCookieSize = intval($sizeRange[0]);
+          $cookieSizes = array();
 
-				$isPrice = in_array($key, array('minPrice', 'maxPrice'));
-				$isWooAttr = str_contains($key, 'filter_');
+          for ($i = $minCookieSize; $i <= $maxCookieSize; $i++) {
+            $cookieSizes[] = $i . 'RU';
+            $cookieSizes[] = $i . '(обувь)';
+          }
 
-				$multipleValues = explode(',', $value);
+          $_GET['pa_razmer'] = implode(',', $cookieSizes);
 
-				if ( count($multipleValues) > 1 && $isWooAttr ) {
-					/**
-					 * This code goes for multi-value $_GET parameters
-					 */
+        }
 
-					$tax_query_array_multi = array(
-						'relation' => 'OR',
-					);
+      }
 
-					$key = str_replace('filter_', '', $key);
+    }
 
-					$tax_query_array_multi[] = array(
-						'taxonomy' => 'pa_' . $key,
-						'field'    => 'slug',
-						'terms'    => $multipleValues,
-						'compare'  => 'IN'
-					);
+    if ( $is_cat ) {
 
-					$tax_query_array[] = $tax_query_array_multi;
+      $category_id = get_queried_object()->term_id;
+      $category = get_term($category_id, 'product_cat'); 
+      $parent_cat = $category->parent;
+      
+      $out_of_filter = array(
+        19,20,84,85,86,87,88,89,90,91,92,93,94
+      );
 
-				} else {
-					/**
-					 * This code proccesses single-value $_GET parameters
-					 */
-					if ($isWooAttr) {
+      global $no_size;
+      $no_size = in_array($parent_cat, $out_of_filter) || in_array($category_id, $out_of_filter);
 
-						$tax_query_array[] = array(
-							'taxonomy' => $key,
-							'field'    => 'slug',
-							'terms'    => $value,
-							'compare' => 'LIKE'
-						);
+      if ( $no_size ) {
+        echo '<script>const noSizeItem = true;</script>';
+      } else {
+        setCatSizeinGET($catsize_enabled);
+      }
 
-					} elseif ($isPrice) {
+    } else {
+      // only shop page should get this code evaluated
+      setCatSizeinGET($catsize_enabled);
+    }
 
-						
+    
 
-						if ($key == 'minPrice') {
-							$compare = '>=';
-						} else {
-							$compare = '<=';
-						}
 
-						$meta_query_array[] = array(
-							'key' => '_price',
-							'value' => $value,
-							'type' => 'numeric',
-							'compare' => $compare
-						);
+    if ( !empty( $_GET ) ) {
 
-					} elseif ($key === 'onlyav') {
-						
-						$meta_query_array[] = array(
-							'key'     => '_stock_status',
-							'value'   => 'instock',
-							'compare' => '='
-						);
+      global $custom_current;
+      
+      $custom_current = absint(
+        max(
+          1,
+          get_query_var( 'paged' ) ? get_query_var( 'paged' ) : get_query_var( 'page' )
+        )
+      );
 
-					}
-				}
+      $query->set( 'post_type', 'product' );
+      $query->set( 'posts_per_page', 12 );
+      $query->set( 'paged', $custom_current );
 
-			}
+      $tax_query_array = array(
+        'relation' => 'AND'
+      );
 
-			if ( isset($_GET['orderby']) ) {
-				switch ($_GET['orderby']) {
-					case 'price':
-						$order_args = array(
-							'orderby'        => 'meta_value_num',
-							'order'          => 'asc',
-							'meta_key'       => '_price'
-						);
-					break;
+      if ( $is_cat ) {
+        $prod_cat = sanitize_text_field($query->query_vars['product_cat']);
 
-					case 'price-desc':
-						$order_args = array(
-							'orderby'        => 'meta_value_num',
-							'order'          => 'desc',
-							'meta_key'       => '_price'
-						);
-					break;
+        $tax_query_array[] = array(
+          'taxonomy' => 'product_cat',
+          'field' => 'slug',
+          'terms' => $prod_cat
+        );
+      }
 
-					case 'rating':
-						$order_args = array(
-							'orderby'        => 'meta_value_num',
-							'order'          => 'desc',
-							'meta_key'       => '_wc_average_rating'
-						);
-					break;
-					
-					case 'popularity':
-						$order_args = array(
-							'orderby'        => 'meta_value_num',
-							'order'          => 'desc',
-							'meta_key'       => 'total_sales'
-						);
-					break;
-					
-					case 'date':
-						$order_args = array(
-							'order'          => 'desc',
-						);
-					break;
+      if (!empty($_GET['minPrice'])) {
+        $meta_query_array = array(
+          'relation' => 'AND',
+        );
+      }
 
-					case 'menu_order':
-						$order_args = null;
-					break;
-				}
-				
-			}
+      foreach ($_GET as $key => $value) {
 
-			$args['tax_query'] = $tax_query_array;
+        $key = sanitize_text_field($key);
+        $value = sanitize_text_field($value);
 
-			if ( isset( $meta_query_array ) && count( $meta_query_array ) ) {
+        $isPrice = in_array($key, array('minPrice', 'maxPrice'));
+        $isWooAttr = str_contains($key, 'pa_');
 
-				$args['meta_query'] = $meta_query_array;
+        if ( $isWooAttr ) {
+          $key = str_replace('gpa_', 'pa_', $key);
+        }
 
-			}
+        $multipleValues = explode(',', $value);
 
-			$result_args = $args;
+        if (count($multipleValues) > 1 && $isWooAttr) {
+          /**
+           * This code goes for multi-value $_GET parameters
+           */
+          // If the attribute value is a comma-separated list of values, use the 'IN' comparison operator
 
-			if ( isset($order_args) ) {
-g
-				$result_args = array_merge( $args, $order_args );
+          $tax_query_array_multi = array(
+            'relation' => 'OR',
+          );
 
-			}
+          if ( $key === 'pa_razmer' ) {
+            $field = 'name';
+          } else {
+            $field = 'slug';
+          }
 
-			global $filtered_query;
+          $tax_query_array_multi[] = array(
+            'taxonomy' => $key,
+            'field'    => $field,
+            'terms'    => $multipleValues,
+            'compare' => 'IN'
+          );
+          
+          $tax_query_array[] = $tax_query_array_multi;
+          
+        } else {
+          /**
+           * This code proccesses single-value $_GET parameters
+           */
+          if ($isWooAttr) {
 
-			$filtered_query = new WP_Query( $result_args );
+            if ( $key === 'pa_razmer' ) {
+              $field = 'name';
+            } else {
+              $field = 'slug';
+            }
 
+            $tax_query_array[] = array(
+              'taxonomy' => $key,
+              'field'    => $field,
+              'terms'    => $value
+            );
+
+          } elseif ($isPrice) {
+
+		if ($key == 'minPrice') {
+			$compare = '>=';
+		} else {
+			$compare = '<=';
 		}
+	
+		$meta_query_array[] = array(
+			'key' => '_price',
+			'value' => $value,
+			'type' => 'numeric',
+			'compare' => $compare
+		);
 
-	}
+          }
+
+        }
+
+      }
+
+      if (isset($_GET['orderby'])) {
+        switch ($_GET['orderby']) {
+          case 'price':
+            $order_args = array(
+              'orderby'        => 'meta_value_num',
+              'order'          => 'asc',
+              'meta_key'       => '_price'
+            );
+            break;
+          case 'price-desc':
+            $order_args = array(
+              'orderby'        => 'meta_value_num',
+              'order'          => 'desc',
+              'meta_key'       => '_price'
+            );
+            break;
+          case 'rating':
+            $order_args = array(
+              'orderby'        => 'meta_value_num',
+              'order'          => 'desc',
+              'meta_key'       => '_wc_average_rating'
+            );
+            break;
+          case 'popularity':
+            $order_args = array(
+              'orderby'        => 'meta_value_num',
+              'order'          => 'desc',
+              'meta_key'       => 'total_sales'
+            );
+            break;
+          case 'date':
+            $order_args = array(
+              'order'          => 'desc',
+            );
+            break;
+          case 'menu_order':
+            $order_args = null;
+            break;
+        }
+      }
+
+      $query->set( 'tax_query', $tax_query_array );
+
+      if (isset($meta_query_array) && count($meta_query_array)) {
+        $query->set( 'meta_query', $meta_query_array );
+      }
+
+      if ( isset($order_args) ) {
+
+        foreach ($order_args as $order_key => $order_val) {
+          $query->set( $order_key, $order_val);
+        }
+
+      }
+
+    }
+
+  }
 }
+add_action( 'pre_get_posts', 'custom_archive_pagination' );
 
 add_action( 'pre_get_posts', 'custom_archive_pagination' );
